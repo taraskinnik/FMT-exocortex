@@ -9,3 +9,8 @@ DS-exocortex-setup/
 # Claude Code — персональные файлы (не входят в шаблон)
 .claude/settings.local.json
 .claude/checkpoint.md
+
+# Другие agent-specific локальные артефакты
+.cursor/workspace-state.json
+.copilot/
+.antigravity/

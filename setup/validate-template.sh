@@ -27,14 +27,14 @@ echo -n "[1/5] Author-specific content... "
 CHECK1_FAIL=0
 for pattern in "tserentserenov" "PACK-MIM" "aist_bot_newarchitecture" "DS-Knowledge-Index-Tseren" "DS-IT-systems" "DS-ai-systems"; do
     # Исключаем: github.com URLs (публичные ссылки), validate-template.sh (содержит паттерны поиска)
-    count=$(grep -rn "$pattern" "$TEMPLATE_DIR" --include="*.md" --include="*.sh" \
+    count=$(grep -rn "$pattern" "$TEMPLATE_DIR" --include="*.md" --include="*.mdc" --include="*.sh" \
             --include="*.json" --include="*.plist" --include="*.yaml" \
             --exclude='validate-template.sh' --exclude='LEARNING-PATH.md' 2>/dev/null \
             | grep -v 'github.com/' | grep -v 'docs/adr/' | wc -l | tr -d ' ' || true)
     if [ "$count" -gt 0 ]; then
         [ "$CHECK1_FAIL" -eq 0 ] && echo "FAIL"
         echo "  Found '$pattern' in $count non-URL locations:"
-        grep -rn "$pattern" "$TEMPLATE_DIR" --include="*.md" --include="*.sh" \
+        grep -rn "$pattern" "$TEMPLATE_DIR" --include="*.md" --include="*.mdc" --include="*.sh" \
             --include="*.json" --include="*.plist" \
             --exclude='validate-template.sh' --exclude='LEARNING-PATH.md' 2>/dev/null \
             | grep -v 'github.com/' | grep -v 'docs/adr/' | head -3 || true
@@ -47,7 +47,7 @@ done
 # 2. Нет захардкоженных /Users/ путей (исключаем: шаблонные /Users/.../,
 #    validate-template.sh (мета-проверки), setup.sh (примеры вида /Users/alice/))
 echo -n "[2/5] Hardcoded /Users/ paths... "
-count=$(grep -rn '/Users/' "$TEMPLATE_DIR" --include="*.md" --include="*.sh" \
+count=$(grep -rn '/Users/' "$TEMPLATE_DIR" --include="*.md" --include="*.mdc" --include="*.sh" \
         --include="*.json" --include="*.plist" \
         --exclude='validate-template.sh' --exclude='setup.sh' 2>/dev/null \
         | grep -v '/Users/\.\.\./' \
@@ -55,7 +55,7 @@ count=$(grep -rn '/Users/' "$TEMPLATE_DIR" --include="*.md" --include="*.sh" \
         | wc -l | tr -d ' ' || true)
 if [ "$count" -gt 0 ]; then
     echo "FAIL ($count hits)"
-    grep -rn '/Users/' "$TEMPLATE_DIR" --include="*.md" --include="*.sh" \
+    grep -rn '/Users/' "$TEMPLATE_DIR" --include="*.md" --include="*.mdc" --include="*.sh" \
         --exclude='validate-template.sh' --exclude='setup.sh' 2>/dev/null \
         | grep -v '/Users/\.\.\./' \
         | grep -v '# .*\(/Users/\|e\.g\.\)' | head -3 || true
@@ -68,7 +68,7 @@ fi
 #    validate-template.sh (мета-проверки), setup.sh (fallback default),
 #    PLATFORM-COMPAT.md (документация о совместимости))
 echo -n "[3/5] Hardcoded /opt/homebrew paths... "
-count=$(grep -rn '/opt/homebrew' "$TEMPLATE_DIR" --include="*.md" --include="*.sh" \
+count=$(grep -rn '/opt/homebrew' "$TEMPLATE_DIR" --include="*.md" --include="*.mdc" --include="*.sh" \
         --include="*.json" --include="*.plist" \
         --exclude='validate-template.sh' --exclude='setup.sh' 2>/dev/null \
         | grep -v 'README.md' \
@@ -78,7 +78,7 @@ count=$(grep -rn '/opt/homebrew' "$TEMPLATE_DIR" --include="*.md" --include="*.s
         | wc -l | tr -d ' ' || true)
 if [ "$count" -gt 0 ]; then
     echo "FAIL ($count hits)"
-    grep -rn '/opt/homebrew' "$TEMPLATE_DIR" --include="*.md" --include="*.sh" \
+    grep -rn '/opt/homebrew' "$TEMPLATE_DIR" --include="*.md" --include="*.mdc" --include="*.sh" \
         --exclude='validate-template.sh' --exclude='setup.sh' 2>/dev/null \
         | grep -v 'README.md' | grep -v 'PLATFORM-COMPAT.md' \
         | grep -v 'validate-template.yml' | head -3 || true
@@ -105,7 +105,8 @@ fi
 # 5. Обязательные файлы
 echo -n "[5/5] Required files... "
 MISSING=0
-for f in CLAUDE.md ONTOLOGY.md README.md \
+for f in AGENTS.md CLAUDE.md ONTOLOGY.md README.md \
+         .github/copilot-instructions.md .cursor/rules/iwe.mdc \
          memory/MEMORY.md memory/hard-distinctions.md \
          memory/protocol-open.md memory/protocol-close.md \
          memory/navigation.md \

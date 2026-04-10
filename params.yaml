@@ -5,6 +5,17 @@
 #
 # Формат: YAML. Протоколы читают params.yaml и адаптируют поведение.
 
+# === Agent Profile ===
+
+# Выбранный AI-агент / editor profile (setup.sh заполняет автоматически)
+agent_id: {{AGENT_ID}}
+
+# Режим интеграции: cli | ide | hybrid
+agent_mode: {{AGENT_MODE}}
+
+# Команда или путь для запуска/открытия выбранного агента
+agent_command: {{AGENT_COMMAND}}
+
 # === Протоколы ===
 
 # Day Open: проверка видео за предыдущий день

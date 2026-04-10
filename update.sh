@@ -45,6 +45,88 @@ else
     sed_inplace() { sed -i '' "$@"; }
 fi
 
+compute_project_slug() {
+    echo "$1" | tr '/\\:' '---'
+}
+
+resolve_agent_mode() {
+    case "$1" in
+        claude) echo "cli" ;;
+        cursor) echo "hybrid" ;;
+        copilot) echo "ide" ;;
+        antigravity) echo "ide" ;;
+        *) echo "custom" ;;
+    esac
+}
+
+resolve_agent_name() {
+    case "$1" in
+        claude) echo "Claude Code" ;;
+        cursor) echo "Cursor" ;;
+        copilot) echo "GitHub Copilot" ;;
+        antigravity) echo "Antigravity" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+resolve_default_agent_command() {
+    case "$1" in
+        claude)
+            command -v claude 2>/dev/null || echo "claude"
+            ;;
+        cursor)
+            command -v cursor 2>/dev/null || echo "cursor"
+            ;;
+        copilot)
+            command -v code 2>/dev/null || echo "code"
+            ;;
+        antigravity)
+            command -v antigravity 2>/dev/null || echo "antigravity"
+            ;;
+        *)
+            echo "$1"
+            ;;
+    esac
+}
+
+resolve_memory_dir() {
+    local agent_id="$1"
+    local project_slug="$2"
+    local workspace_dir="$3"
+
+    case "$agent_id" in
+        claude)
+            echo "$HOME/.claude/projects/$project_slug/memory"
+            ;;
+        cursor)
+            echo "$workspace_dir/.cursor/memory"
+            ;;
+        copilot)
+            echo "$workspace_dir/.copilot/memory"
+            ;;
+        antigravity)
+            echo "$workspace_dir/.antigravity/memory"
+            ;;
+        *)
+            echo "$workspace_dir/.agent-memory/$agent_id"
+            ;;
+    esac
+}
+
+agent_supports_claude_layer() {
+    [ "$1" = "claude" ]
+}
+
+print_restart_hint() {
+    case "$1" in
+        claude) echo "Перезапустите Claude Code для применения обновлений в memory/." ;;
+        cursor) echo "Перезапустите Cursor или переоткройте workspace для применения обновлений." ;;
+        copilot) echo "Переоткройте VS Code / Copilot Chat, чтобы подтянуть обновлённые инструкции." ;;
+        antigravity) echo "Переоткройте Antigravity workspace, чтобы подтянуть обновлённые инструкции." ;;
+        *) echo "Переоткройте выбранный агент, чтобы подтянуть обновлённые инструкции." ;;
+    esac
+}
+
 # === Cross-platform hash ===
 hash_file() {
     shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1 || \
@@ -201,6 +283,7 @@ fi
 echo "Не затрагиваются:"
 echo "  ✓ memory/MEMORY.md (личная оперативная память)"
 echo "  ✓ CLAUDE.md (3-way merge: ваши правки сохраняются)"
+echo "  ✓ AGENTS.md (repo-level compatibility entrypoint)"
 echo "  ✓ extensions/ (ваши расширения протоколов)"
 echo "  ✓ params.yaml (ваши параметры)"
 echo "  ✓ .secrets/ (ключи)"
@@ -331,6 +414,15 @@ if [ -f "$ENV_FILE" ]; then
             declare "ENV_$key=$value"
         done < "$ENV_FILE"
 
+        ENV_AGENT_ID="${ENV_AGENT_ID:-claude}"
+        ENV_AGENT_NAME="${ENV_AGENT_NAME:-$(resolve_agent_name "$ENV_AGENT_ID")}"
+        ENV_AGENT_MODE="${ENV_AGENT_MODE:-$(resolve_agent_mode "$ENV_AGENT_ID")}"
+        ENV_PROJECT_SLUG="${ENV_PROJECT_SLUG:-${ENV_CLAUDE_PROJECT_SLUG:-$(compute_project_slug "${ENV_WORKSPACE_DIR:-$WORKSPACE_DIR}")}}"
+        ENV_AGENT_COMMAND="${ENV_AGENT_COMMAND:-${ENV_CLAUDE_PATH:-$(resolve_default_agent_command "$ENV_AGENT_ID")}}"
+        ENV_AGENT_MEMORY_DIR="${ENV_AGENT_MEMORY_DIR:-$(resolve_memory_dir "$ENV_AGENT_ID" "$ENV_PROJECT_SLUG" "${ENV_WORKSPACE_DIR:-$WORKSPACE_DIR}")}"
+        ENV_CLAUDE_PROJECT_SLUG="${ENV_CLAUDE_PROJECT_SLUG:-$ENV_PROJECT_SLUG}"
+        ENV_HOME_DIR="${ENV_HOME_DIR:-$HOME}"
+
         PLACEHOLDER_HIT=0
         for f in "${NEW_FILES[@]}" "${UPDATED_FILES[@]}"; do
             filepath="$SCRIPT_DIR/$f"
@@ -340,6 +432,12 @@ if [ -f "$ENV_FILE" ]; then
                 sed_inplace \
                     -e "s|{{GITHUB_USER}}|${ENV_GITHUB_USER:-}|g" \
                     -e "s|{{WORKSPACE_DIR}}|${ENV_WORKSPACE_DIR:-}|g" \
+                    -e "s|{{AGENT_ID}}|${ENV_AGENT_ID:-}|g" \
+                    -e "s|{{AGENT_NAME}}|${ENV_AGENT_NAME:-}|g" \
+                    -e "s|{{AGENT_MODE}}|${ENV_AGENT_MODE:-}|g" \
+                    -e "s|{{AGENT_COMMAND}}|${ENV_AGENT_COMMAND:-}|g" \
+                    -e "s|{{PROJECT_SLUG}}|${ENV_PROJECT_SLUG:-}|g" \
+                    -e "s|{{AGENT_MEMORY_DIR}}|${ENV_AGENT_MEMORY_DIR:-}|g" \
                     -e "s|{{CLAUDE_PATH}}|${ENV_CLAUDE_PATH:-}|g" \
                     -e "s|{{CLAUDE_PROJECT_SLUG}}|${ENV_CLAUDE_PROJECT_SLUG:-}|g" \
                     -e "s|{{TIMEZONE_HOUR}}|${ENV_TIMEZONE_HOUR:-}|g" \
@@ -397,8 +495,14 @@ else
 # SECURITY: chmod 600. Listed in .gitignore. Do NOT commit this file.
 GITHUB_USER=your-username
 WORKSPACE_DIR=$DETECTED_WORKSPACE
+AGENT_ID=claude
+AGENT_NAME=Claude Code
+AGENT_MODE=cli
+AGENT_COMMAND=$(command -v claude 2>/dev/null || echo 'claude')
+PROJECT_SLUG=$(compute_project_slug "$DETECTED_WORKSPACE")
+AGENT_MEMORY_DIR=$(resolve_memory_dir claude "$(compute_project_slug "$DETECTED_WORKSPACE")" "$DETECTED_WORKSPACE")
 CLAUDE_PATH=$(command -v claude 2>/dev/null || echo 'claude')
-CLAUDE_PROJECT_SLUG=$(echo "$DETECTED_WORKSPACE" | tr '/' '-')
+CLAUDE_PROJECT_SLUG=$(compute_project_slug "$DETECTED_WORKSPACE")
 TIMEZONE_HOUR=4
 TIMEZONE_DESC=4:00 UTC
 HOME_DIR=$HOME
@@ -433,7 +537,7 @@ fi
 echo ""
 echo "Обновление platform-space..."
 
-# Copy CLAUDE.md to workspace root
+# Copy instruction entrypoints to workspace root
 CLAUDE_UPDATED=false
 for f in "${NEW_FILES[@]}" "${UPDATED_FILES[@]}"; do
     if [ "$f" = "CLAUDE.md" ]; then
@@ -474,43 +578,49 @@ for f in "${NEW_FILES[@]}" "${UPDATED_FILES[@]}"; do
             echo "  ✓ $WS_CURRENT обновлён (базовый файл создан)"
         fi
         CLAUDE_UPDATED=true
+    elif [ "$f" = "AGENTS.md" ] && [ -f "$SCRIPT_DIR/AGENTS.md" ]; then
+        cp "$SCRIPT_DIR/AGENTS.md" "$WORKSPACE_DIR/AGENTS.md"
+        echo "  ✓ $WORKSPACE_DIR/AGENTS.md обновлён"
     fi
 done
 
-# Copy memory files to Claude projects directory
-CLAUDE_PROJECT_SLUG="$(echo "$WORKSPACE_DIR" | tr '/' '-')"
-CLAUDE_MEMORY_DIR="$HOME/.claude/projects/$CLAUDE_PROJECT_SLUG/memory"
+# Resolve active agent profile
+ENV_AGENT_ID="${ENV_AGENT_ID:-claude}"
+ENV_AGENT_NAME="${ENV_AGENT_NAME:-$(resolve_agent_name "$ENV_AGENT_ID")}"
+ENV_PROJECT_SLUG="${ENV_PROJECT_SLUG:-${ENV_CLAUDE_PROJECT_SLUG:-$(compute_project_slug "$WORKSPACE_DIR")}}"
+AGENT_MEMORY_DIR="$(resolve_memory_dir "$ENV_AGENT_ID" "$ENV_PROJECT_SLUG" "$WORKSPACE_DIR")"
 
-if [ -d "$CLAUDE_MEMORY_DIR" ]; then
+if [ -d "$AGENT_MEMORY_DIR" ]; then
     MEM_UPDATED=0
     for f in "${NEW_FILES[@]}" "${UPDATED_FILES[@]}"; do
         case "$f" in
             memory/*.md)
                 fname=$(basename "$f")
                 if [ "$fname" != "MEMORY.md" ]; then
-                    cp "$SCRIPT_DIR/$f" "$CLAUDE_MEMORY_DIR/$fname"
+                    cp "$SCRIPT_DIR/$f" "$AGENT_MEMORY_DIR/$fname"
                     MEM_UPDATED=$((MEM_UPDATED + 1))
                 fi
                 ;;
         esac
     done
     if [ "$MEM_UPDATED" -gt 0 ]; then
-        echo "  ✓ $MEM_UPDATED memory-файлов обновлено в $CLAUDE_MEMORY_DIR"
+        echo "  ✓ $MEM_UPDATED memory-файлов обновлено в $AGENT_MEMORY_DIR"
     fi
     echo "  ✓ memory/MEMORY.md — не тронут"
 fi
 
-# Propagate skills, hooks, rules to workspace if changed
-for f in "${NEW_FILES[@]}" "${UPDATED_FILES[@]}"; do
-    case "$f" in .claude/skills/*|.claude/hooks/*|.claude/rules/*|.claude/settings.json)
-        src="$SCRIPT_DIR/$f"
-        dst="$WORKSPACE_DIR/$f"
-        mkdir -p "$(dirname "$dst")"
-        cp "$src" "$dst"
-        echo "  ✓ $f → workspace"
-        ;;
-    esac
-done
+if agent_supports_claude_layer "$ENV_AGENT_ID"; then
+    for f in "${NEW_FILES[@]}" "${UPDATED_FILES[@]}"; do
+        case "$f" in .claude/skills/*|.claude/hooks/*|.claude/rules/*|.claude/settings.json)
+            src="$SCRIPT_DIR/$f"
+            dst="$WORKSPACE_DIR/$f"
+            mkdir -p "$(dirname "$dst")"
+            cp "$src" "$dst"
+            echo "  ✓ $f → workspace"
+            ;;
+        esac
+    done
+fi
 
 # (Step 6b removed — repo rename no longer supported, no link migration needed)
 
@@ -641,4 +751,4 @@ echo "=========================================="
 echo "  Обновление завершено ($APPLIED файлов)"
 echo "=========================================="
 echo ""
-echo "Перезапустите Claude Code для применения обновлений в memory/."
+print_restart_hint "$ENV_AGENT_ID"

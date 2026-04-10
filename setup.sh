@@ -23,6 +23,122 @@ else
     sed_inplace() { sed -i '' "$@"; }
 fi
 
+compute_project_slug() {
+    echo "$1" | tr '/\\:' '---'
+}
+
+resolve_default_agent_command() {
+    case "$1" in
+        claude)
+            command -v claude 2>/dev/null || echo "claude"
+            ;;
+        cursor)
+            command -v cursor 2>/dev/null || echo "cursor"
+            ;;
+        copilot)
+            command -v code 2>/dev/null || echo "code"
+            ;;
+        antigravity)
+            command -v antigravity 2>/dev/null || echo "antigravity"
+            ;;
+        *)
+            echo "$1"
+            ;;
+    esac
+}
+
+resolve_agent_mode() {
+    case "$1" in
+        claude) echo "cli" ;;
+        cursor) echo "hybrid" ;;
+        copilot) echo "ide" ;;
+        antigravity) echo "ide" ;;
+        *) echo "custom" ;;
+    esac
+}
+
+resolve_memory_dir() {
+    local agent_id="$1"
+    local project_slug="$2"
+    local workspace_dir="$3"
+
+    case "$agent_id" in
+        claude)
+            echo "$HOME/.claude/projects/$project_slug/memory"
+            ;;
+        cursor)
+            echo "$workspace_dir/.cursor/memory"
+            ;;
+        copilot)
+            echo "$workspace_dir/.copilot/memory"
+            ;;
+        antigravity)
+            echo "$workspace_dir/.antigravity/memory"
+            ;;
+        *)
+            echo "$workspace_dir/.agent-memory/$agent_id"
+            ;;
+    esac
+}
+
+agent_supports_claude_layer() {
+    [ "$1" = "claude" ]
+}
+
+print_agent_setup_notes() {
+    case "$1" in
+        claude)
+            echo "  Claude layer: .claude/, hooks, skills, MCP via claude.ai"
+            ;;
+        cursor)
+            echo "  Cursor layer: repo-level AGENTS.md + .cursor/rules/, memory in workspace"
+            ;;
+        copilot)
+            echo "  Copilot layer: repo-level AGENTS.md + .github/copilot-instructions.md"
+            ;;
+        antigravity)
+            echo "  Antigravity layer: repo-level AGENTS.md + workspace memory layout"
+            ;;
+    esac
+}
+
+prompt_agent_selection() {
+    echo "Select AI agent profile:"
+    echo "  1) Claude Code"
+    echo "  2) Cursor"
+    echo "  3) GitHub Copilot"
+    echo "  4) Antigravity"
+
+    while true; do
+        read -p "Choose agent [1-4]: " AGENT_CHOICE
+        case "$AGENT_CHOICE" in
+            1)
+                AGENT_ID="claude"
+                AGENT_NAME="Claude Code"
+                break
+                ;;
+            2)
+                AGENT_ID="cursor"
+                AGENT_NAME="Cursor"
+                break
+                ;;
+            3)
+                AGENT_ID="copilot"
+                AGENT_NAME="GitHub Copilot"
+                break
+                ;;
+            4)
+                AGENT_ID="antigravity"
+                AGENT_NAME="Antigravity"
+                break
+                ;;
+            *)
+                echo "  Enter 1, 2, 3 or 4."
+                ;;
+        esac
+    done
+}
+
 # === Parse arguments ===
 for arg in "$@"; do
     case "$arg" in
@@ -59,6 +175,11 @@ if $VALIDATE_ONLY; then
         echo "[1/4] Env-конфиг... ✓ .exocortex.env найден"
         # Safe read: grep KEY=VALUE, no eval/source (values may contain spaces)
         _env_get() { grep "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d'=' -f2-; }
+        AGENT_ID="$(_env_get AGENT_ID)"
+        AGENT_NAME="$(_env_get AGENT_NAME)"
+        AGENT_MEMORY_DIR="$(_env_get AGENT_MEMORY_DIR)"
+        AGENT_ID="${AGENT_ID:-claude}"
+        AGENT_NAME="${AGENT_NAME:-Claude Code}"
         # Check required keys
         for key in GITHUB_USER WORKSPACE_DIR; do
             val=$(_env_get "$key")
@@ -75,7 +196,7 @@ if $VALIDATE_ONLY; then
 
     # Check required files
     echo "[2/4] Файлы..."
-    CHECK_FILES="CLAUDE.md memory/MEMORY.md memory/protocol-open.md memory/protocol-close.md memory/protocol-work.md memory/navigation.md memory/roles.md"
+    CHECK_FILES="AGENTS.md CLAUDE.md memory/MEMORY.md memory/protocol-open.md memory/protocol-close.md memory/protocol-work.md memory/navigation.md memory/roles.md"
     for f in $CHECK_FILES; do
         if [ -f "$SCRIPT_DIR/$f" ]; then
             echo "  ✓ $f"
@@ -101,8 +222,21 @@ if $VALIDATE_ONLY; then
 
     # Check MCP accessibility
     echo "[4/4] MCP-доступность..."
-    echo "  MCP подключается через claude.ai/settings/connectors"
-    echo "  Проверьте командой /mcp в Claude Code"
+    case "$AGENT_ID" in
+        claude)
+            echo "  MCP подключается через claude.ai/settings/connectors"
+            echo "  Проверьте командой /mcp в Claude Code"
+            ;;
+        cursor|copilot|antigravity)
+            echo "  Проверьте knowledge/MCP integration в $AGENT_NAME"
+            if [ -n "$AGENT_MEMORY_DIR" ]; then
+                echo "  Memory dir: $AGENT_MEMORY_DIR"
+            fi
+            ;;
+        *)
+            echo "  Проверьте knowledge/MCP integration в выбранном агенте"
+            ;;
+    esac
 
     echo ""
     if [ "$ERRORS" -eq 0 ]; then
@@ -175,9 +309,6 @@ if $CORE_ONLY; then
     echo "  GitHub CLI, Node.js, Claude Code — не требуются."
 else
     check_command "gh" "GitHub CLI" "brew install gh"
-    check_command "node" "Node.js" "brew install node (or https://nodejs.org)"
-    check_command "npm" "npm" "Comes with Node.js"
-    check_command "claude" "Claude Code" "npm install -g @anthropic-ai/claude-code"
 
     # Check gh auth
     if command -v gh >/dev/null 2>&1; then
@@ -207,14 +338,56 @@ WORKSPACE_DIR="${WORKSPACE_DIR:-$(dirname "$TEMPLATE_DIR")}"
 # Expand ~ to $HOME
 WORKSPACE_DIR="${WORKSPACE_DIR/#\~/$HOME}"
 
+prompt_agent_selection
+AGENT_MODE="$(resolve_agent_mode "$AGENT_ID")"
+AGENT_COMMAND_DEFAULT="$(resolve_default_agent_command "$AGENT_ID")"
+
+if ! $CORE_ONLY; then
+    echo ""
+    echo "Agent profile: $AGENT_NAME"
+    case "$AGENT_ID" in
+        claude)
+            check_command "node" "Node.js" "brew install node (or https://nodejs.org)"
+            check_command "npm" "npm" "Comes with Node.js"
+            check_command "claude" "Claude Code" "npm install -g @anthropic-ai/claude-code"
+            if [ "$PREREQ_FAIL" -eq 1 ]; then
+                echo "ERROR: Agent prerequisites check failed. Install missing tools and try again."
+                exit 1
+            fi
+            ;;
+        cursor)
+            if command -v cursor >/dev/null 2>&1; then
+                echo "  ✓ Cursor CLI: $(command -v cursor)"
+            else
+                echo "  ○ Cursor CLI: не найден (можно продолжить с IDE-only режимом)"
+                echo "    Install: https://cursor.com/downloads"
+            fi
+            ;;
+        copilot)
+            if command -v code >/dev/null 2>&1; then
+                echo "  ✓ VS Code CLI: $(command -v code)"
+            else
+                echo "  ○ VS Code CLI: не найден (Copilot IDE setup потребуется вручную)"
+                echo "    Install: https://code.visualstudio.com/"
+            fi
+            ;;
+        antigravity)
+            if command -v antigravity >/dev/null 2>&1; then
+                echo "  ✓ Antigravity CLI: $(command -v antigravity)"
+            else
+                echo "  ○ Antigravity CLI: не найден (можно продолжить с plugin/IDE integration)"
+            fi
+            ;;
+    esac
+fi
+
 if $CORE_ONLY; then
-    # Core: используем defaults, не спрашиваем Claude-специфичные параметры
-    CLAUDE_PATH="${AI_CLI:-claude}"
+    AGENT_COMMAND="$AGENT_COMMAND_DEFAULT"
     TIMEZONE_HOUR="4"
     TIMEZONE_DESC="4:00 UTC"
 else
-    read -p "Claude CLI path [$(command -v claude || echo '/opt/homebrew/bin/claude')]: " CLAUDE_PATH
-    CLAUDE_PATH="${CLAUDE_PATH:-$(command -v claude || echo '/opt/homebrew/bin/claude')}"
+    read -p "$AGENT_NAME command/path [$AGENT_COMMAND_DEFAULT]: " AGENT_COMMAND
+    AGENT_COMMAND="${AGENT_COMMAND:-$AGENT_COMMAND_DEFAULT}"
 
     read -p "Strategist launch hour (UTC, 0-23) [4]: " TIMEZONE_HOUR
     TIMEZONE_HOUR="${TIMEZONE_HOUR:-4}"
@@ -224,23 +397,31 @@ else
 fi
 
 HOME_DIR="$HOME"
-
-# Compute Claude project slug: /Users/alice/IWE → -Users-alice-IWE
-CLAUDE_PROJECT_SLUG="$(echo "$WORKSPACE_DIR" | tr '/' '-')"
+PROJECT_SLUG="$(compute_project_slug "$WORKSPACE_DIR")"
+AGENT_MEMORY_DIR="$(resolve_memory_dir "$AGENT_ID" "$PROJECT_SLUG" "$WORKSPACE_DIR")"
+CLAUDE_PROJECT_SLUG="$PROJECT_SLUG"
+if agent_supports_claude_layer "$AGENT_ID"; then
+    CLAUDE_PATH="$AGENT_COMMAND"
+else
+    CLAUDE_PATH=""
+fi
 
 echo ""
 echo "Configuration:"
 echo "  GitHub user:    $GITHUB_USER"
 echo "  Workspace:      $WORKSPACE_DIR"
+echo "  Agent:          $AGENT_NAME ($AGENT_MODE)"
 if $CORE_ONLY; then
     echo "  Mode:           core (offline)"
 else
-    echo "  Claude path:    $CLAUDE_PATH"
+    echo "  Agent command:  $AGENT_COMMAND"
     echo "  Schedule hour:  $TIMEZONE_HOUR (UTC)"
     echo "  Time desc:      $TIMEZONE_DESC"
 fi
 echo "  Home dir:       $HOME_DIR"
-echo "  Project slug:   $CLAUDE_PROJECT_SLUG"
+echo "  Project slug:   $PROJECT_SLUG"
+echo "  Memory dir:     $AGENT_MEMORY_DIR"
+print_agent_setup_notes "$AGENT_ID"
 echo ""
 
 # === Data Policy acceptance (skip in dry-run) ===
@@ -280,8 +461,14 @@ else
 # === Core (substituted into template files) ===
 GITHUB_USER=$GITHUB_USER
 WORKSPACE_DIR=$WORKSPACE_DIR
+AGENT_ID=$AGENT_ID
+AGENT_NAME=$AGENT_NAME
+AGENT_MODE=$AGENT_MODE
+AGENT_COMMAND=$AGENT_COMMAND
+PROJECT_SLUG=$PROJECT_SLUG
+AGENT_MEMORY_DIR=$AGENT_MEMORY_DIR
 CLAUDE_PATH=$CLAUDE_PATH
-CLAUDE_PROJECT_SLUG=$CLAUDE_PROJECT_SLUG
+CLAUDE_PROJECT_SLUG=$PROJECT_SLUG
 TIMEZONE_HOUR=$TIMEZONE_HOUR
 TIMEZONE_DESC=$TIMEZONE_DESC
 HOME_DIR=$HOME_DIR
@@ -311,8 +498,14 @@ if $DRY_RUN; then
     echo "  [DRY RUN] Would substitute placeholders in $PLACEHOLDER_FILES files"
     echo "    {{GITHUB_USER}} → $GITHUB_USER"
     echo "    {{WORKSPACE_DIR}} → $WORKSPACE_DIR"
+    echo "    {{AGENT_ID}} → $AGENT_ID"
+    echo "    {{AGENT_NAME}} → $AGENT_NAME"
+    echo "    {{AGENT_MODE}} → $AGENT_MODE"
+    echo "    {{AGENT_COMMAND}} → $AGENT_COMMAND"
+    echo "    {{PROJECT_SLUG}} → $PROJECT_SLUG"
+    echo "    {{AGENT_MEMORY_DIR}} → $AGENT_MEMORY_DIR"
     echo "    {{CLAUDE_PATH}} → $CLAUDE_PATH"
-    echo "    {{CLAUDE_PROJECT_SLUG}} → $CLAUDE_PROJECT_SLUG"
+    echo "    {{CLAUDE_PROJECT_SLUG}} → $PROJECT_SLUG"
     echo "    {{TIMEZONE_HOUR}} → $TIMEZONE_HOUR"
     echo "    {{TIMEZONE_DESC}} → $TIMEZONE_DESC"
     echo "    {{HOME_DIR}} → $HOME_DIR"
@@ -321,8 +514,14 @@ else
         sed_inplace \
             -e "s|{{GITHUB_USER}}|$GITHUB_USER|g" \
             -e "s|{{WORKSPACE_DIR}}|$WORKSPACE_DIR|g" \
+            -e "s|{{AGENT_ID}}|$AGENT_ID|g" \
+            -e "s|{{AGENT_NAME}}|$AGENT_NAME|g" \
+            -e "s|{{AGENT_MODE}}|$AGENT_MODE|g" \
+            -e "s|{{AGENT_COMMAND}}|$AGENT_COMMAND|g" \
+            -e "s|{{PROJECT_SLUG}}|$PROJECT_SLUG|g" \
+            -e "s|{{AGENT_MEMORY_DIR}}|$AGENT_MEMORY_DIR|g" \
             -e "s|{{CLAUDE_PATH}}|$CLAUDE_PATH|g" \
-            -e "s|{{CLAUDE_PROJECT_SLUG}}|$CLAUDE_PROJECT_SLUG|g" \
+            -e "s|{{CLAUDE_PROJECT_SLUG}}|$PROJECT_SLUG|g" \
             -e "s|{{TIMEZONE_HOUR}}|$TIMEZONE_HOUR|g" \
             -e "s|{{TIMEZONE_DESC}}|$TIMEZONE_DESC|g" \
             -e "s|{{HOME_DIR}}|$HOME_DIR|g" \
@@ -340,92 +539,108 @@ fi
 
 # (Repo rename removed — folder stays as FMT-exocortex-template)
 
-# === 2. Copy CLAUDE.md to workspace root ===
-echo "[2/6] Installing CLAUDE.md..."
+# === 2. Copy instruction entrypoints to workspace root ===
+echo "[2/6] Installing instruction entrypoints..."
 if $DRY_RUN; then
     echo "  [DRY RUN] Would copy: $TEMPLATE_DIR/CLAUDE.md → $WORKSPACE_DIR/CLAUDE.md"
+    if [ -f "$TEMPLATE_DIR/AGENTS.md" ]; then
+        echo "  [DRY RUN] Would copy: $TEMPLATE_DIR/AGENTS.md → $WORKSPACE_DIR/AGENTS.md"
+    fi
 else
     cp "$TEMPLATE_DIR/CLAUDE.md" "$WORKSPACE_DIR/CLAUDE.md"
     # Save base copy for 3-way merge on future updates
     cp "$TEMPLATE_DIR/CLAUDE.md" "$TEMPLATE_DIR/.claude.md.base"
     cp "$TEMPLATE_DIR/CLAUDE.md" "$WORKSPACE_DIR/.claude.md.base"
     echo "  Copied to $WORKSPACE_DIR/CLAUDE.md (+ merge base)"
+    if [ -f "$TEMPLATE_DIR/AGENTS.md" ]; then
+        cp "$TEMPLATE_DIR/AGENTS.md" "$WORKSPACE_DIR/AGENTS.md"
+        echo "  Copied to $WORKSPACE_DIR/AGENTS.md"
+    fi
 fi
 
-# === 3. Copy memory to Claude projects directory ===
+# === 3. Copy memory to selected agent directory ===
 echo "[3/6] Installing memory..."
-CLAUDE_MEMORY_DIR="$HOME/.claude/projects/$CLAUDE_PROJECT_SLUG/memory"
 if $DRY_RUN; then
     MEM_COUNT=$(ls "$TEMPLATE_DIR/memory/"*.md 2>/dev/null | wc -l | tr -d ' ')
-    echo "  [DRY RUN] Would copy $MEM_COUNT memory files → $CLAUDE_MEMORY_DIR/"
+    echo "  [DRY RUN] Would copy $MEM_COUNT memory files → $AGENT_MEMORY_DIR/"
     if [ ! -e "$WORKSPACE_DIR/memory" ]; then
-        echo "  [DRY RUN] Would create symlink: $WORKSPACE_DIR/memory → $CLAUDE_MEMORY_DIR"
+        echo "  [DRY RUN] Would create symlink: $WORKSPACE_DIR/memory → $AGENT_MEMORY_DIR"
     else
         echo "  WARN: $WORKSPACE_DIR/memory already exists, symlink would be skipped."
     fi
 else
-    mkdir -p "$CLAUDE_MEMORY_DIR"
-    cp "$TEMPLATE_DIR/memory/"*.md "$CLAUDE_MEMORY_DIR/"
-    echo "  Copied to $CLAUDE_MEMORY_DIR"
+    mkdir -p "$AGENT_MEMORY_DIR"
+    cp "$TEMPLATE_DIR/memory/"*.md "$AGENT_MEMORY_DIR/"
+    echo "  Copied to $AGENT_MEMORY_DIR"
 
     # Create symlink so CLAUDE.md references (memory/protocol-open.md etc.) resolve from workspace root
     if [ ! -e "$WORKSPACE_DIR/memory" ]; then
-        ln -s "$CLAUDE_MEMORY_DIR" "$WORKSPACE_DIR/memory"
-        echo "  Symlink: $WORKSPACE_DIR/memory → $CLAUDE_MEMORY_DIR"
+        ln -s "$AGENT_MEMORY_DIR" "$WORKSPACE_DIR/memory"
+        echo "  Symlink: $WORKSPACE_DIR/memory → $AGENT_MEMORY_DIR"
     else
         echo "  WARN: $WORKSPACE_DIR/memory already exists, symlink skipped."
     fi
 fi
 
-# === 4. Copy .claude settings ===
+# === 4. Install agent-specific config ===
 if $CORE_ONLY; then
-    echo "[4/6] Claude settings... пропущено (core mode)"
+    echo "[4/6] Agent-specific config... пропущено (core mode)"
 else
-    echo "[4/6] Installing Claude settings..."
-    if $DRY_RUN; then
-        if [ -f "$TEMPLATE_DIR/.claude/settings.local.json" ]; then
-            echo "  [DRY RUN] Would copy: settings.local.json → $WORKSPACE_DIR/.claude/settings.local.json"
+    echo "[4/6] Installing $AGENT_NAME profile..."
+    if agent_supports_claude_layer "$AGENT_ID"; then
+        if $DRY_RUN; then
+            if [ -f "$TEMPLATE_DIR/.claude/settings.local.json" ]; then
+                echo "  [DRY RUN] Would copy: settings.local.json → $WORKSPACE_DIR/.claude/settings.local.json"
+            else
+                echo "  WARN: settings.local.json not found in template."
+            fi
+            echo "  [DRY RUN] Would show MCP setup instructions (claude.ai/settings/connectors)"
         else
-            echo "  WARN: settings.local.json not found in template."
-        fi
-        echo "  [DRY RUN] Would show MCP setup instructions (claude.ai/settings/connectors)"
-    else
-        mkdir -p "$WORKSPACE_DIR/.claude"
-        if [ -f "$TEMPLATE_DIR/.claude/settings.local.json" ]; then
-            cp "$TEMPLATE_DIR/.claude/settings.local.json" "$WORKSPACE_DIR/.claude/settings.local.json"
-            echo "  Copied to $WORKSPACE_DIR/.claude/settings.local.json"
-        else
-            echo "  WARN: settings.local.json not found in template, skipping."
-        fi
+            mkdir -p "$WORKSPACE_DIR/.claude"
+            if [ -f "$TEMPLATE_DIR/.claude/settings.local.json" ]; then
+                cp "$TEMPLATE_DIR/.claude/settings.local.json" "$WORKSPACE_DIR/.claude/settings.local.json"
+                echo "  Copied to $WORKSPACE_DIR/.claude/settings.local.json"
+            else
+                echo "  WARN: settings.local.json not found in template, skipping."
+            fi
 
-        # MCP knowledge servers connect through Gateway (OAuth auto-flow)
-        echo "  Знаниевые MCP-серверы подключаются через Gateway (автоматически):"
-        echo ""
-        echo "  .mcp.json уже содержит iwe-knowledge → https://mcp.aisystant.com/mcp"
-        echo "  При первом запуске Claude Code откроется браузер для входа через Ory."
-        echo "  Необходима подписка «Бесконечное развитие»."
-        echo ""
-        echo "  После входа проверьте командой /mcp в Claude Code."
+            echo "  Знаниевые MCP-серверы подключаются через Gateway (автоматически):"
+            echo ""
+            echo "  .mcp.json уже содержит iwe-knowledge → https://mcp.aisystant.com/mcp"
+            echo "  При первом запуске Claude Code откроется браузер для входа через Ory."
+            echo "  Необходима подписка «Бесконечное развитие»."
+            echo ""
+            echo "  После входа проверьте командой /mcp в Claude Code."
+        fi
+    else
+        if $DRY_RUN; then
+            echo "  [DRY RUN] Would skip .claude workspace config for $AGENT_NAME"
+        else
+            echo "  Workspace Claude-layer skipped for $AGENT_NAME"
+        fi
     fi
 fi
 
 # === 4b. Propagate skills, hooks, rules to workspace ===
-echo "[4b] Installing skills, hooks, rules..."
-if $DRY_RUN; then
-    echo "  [DRY RUN] Would copy .claude/skills/, .claude/hooks/, .claude/rules/ → $WORKSPACE_DIR/.claude/"
-else
-    mkdir -p "$WORKSPACE_DIR/.claude"
-    for subdir in skills hooks rules; do
-        if [ -d "$TEMPLATE_DIR/.claude/$subdir" ]; then
-            cp -r "$TEMPLATE_DIR/.claude/$subdir" "$WORKSPACE_DIR/.claude/"
-            echo "  ✓ .claude/$subdir/ → $WORKSPACE_DIR/.claude/$subdir/"
+if agent_supports_claude_layer "$AGENT_ID"; then
+    echo "[4b] Installing skills, hooks, rules..."
+    if $DRY_RUN; then
+        echo "  [DRY RUN] Would copy .claude/skills/, .claude/hooks/, .claude/rules/ → $WORKSPACE_DIR/.claude/"
+    else
+        mkdir -p "$WORKSPACE_DIR/.claude"
+        for subdir in skills hooks rules; do
+            if [ -d "$TEMPLATE_DIR/.claude/$subdir" ]; then
+                cp -r "$TEMPLATE_DIR/.claude/$subdir" "$WORKSPACE_DIR/.claude/"
+                echo "  ✓ .claude/$subdir/ → $WORKSPACE_DIR/.claude/$subdir/"
+            fi
+        done
+        if [ -f "$TEMPLATE_DIR/.claude/settings.json" ]; then
+            cp "$TEMPLATE_DIR/.claude/settings.json" "$WORKSPACE_DIR/.claude/settings.json"
+            echo "  ✓ .claude/settings.json"
         fi
-    done
-    # Copy settings.json (project-level, not local)
-    if [ -f "$TEMPLATE_DIR/.claude/settings.json" ]; then
-        cp "$TEMPLATE_DIR/.claude/settings.json" "$WORKSPACE_DIR/.claude/settings.json"
-        echo "  ✓ .claude/settings.json"
     fi
+else
+    echo "[4b] Claude hooks/skills... skipped for $AGENT_NAME"
 fi
 
 # === 4c. Copy .mcp.json to workspace ===
@@ -584,20 +799,36 @@ else
     echo ""
     echo "Verify installation:"
     echo "  ✓ CLAUDE.md:   $WORKSPACE_DIR/CLAUDE.md"
-    echo "  ✓ Memory:      $CLAUDE_MEMORY_DIR/ ($(ls "$CLAUDE_MEMORY_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ') files)"
-    echo "  ✓ Symlink:     $WORKSPACE_DIR/memory → $CLAUDE_MEMORY_DIR"
+    if [ -f "$WORKSPACE_DIR/AGENTS.md" ]; then
+        echo "  ✓ AGENTS.md:   $WORKSPACE_DIR/AGENTS.md"
+    fi
+    echo "  ✓ Memory:      $AGENT_MEMORY_DIR/ ($(ls "$AGENT_MEMORY_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ') files)"
+    echo "  ✓ Symlink:     $WORKSPACE_DIR/memory → $AGENT_MEMORY_DIR"
     echo "  ✓ DS-strategy: $MY_STRATEGY_DIR/"
     echo "  ✓ Template:    $TEMPLATE_DIR/"
     echo ""
 
     echo "Next steps:"
     echo "  1. cd $WORKSPACE_DIR"
-    if $CORE_ONLY; then
-        echo "  2. Запустите ваш AI CLI (Claude Code, Codex, Aider, Continue.dev и др.)"
-        echo "  3. Скажите: «Проведём первую стратегическую сессию»"
-    else
-        echo "  2. claude"
-        echo "  3. Ask Claude: «Проведём первую стратегическую сессию»"
+    case "$AGENT_ID" in
+        claude)
+            echo "  2. $AGENT_COMMAND"
+            echo "  3. Скажите: «Проведём первую стратегическую сессию»"
+            ;;
+        cursor)
+            echo "  2. $AGENT_COMMAND $WORKSPACE_DIR"
+            echo "  3. Откройте чат Cursor и начните с: «Проведём первую стратегическую сессию»"
+            ;;
+        copilot)
+            echo "  2. ${AGENT_COMMAND:-code} $WORKSPACE_DIR"
+            echo "  3. Откройте Copilot Chat и начните с: «Проведём первую стратегическую сессию»"
+            ;;
+        antigravity)
+            echo "  2. Откройте $WORKSPACE_DIR в Antigravity"
+            echo "  3. Начните с: «Проведём первую стратегическую сессию»"
+            ;;
+    esac
+    if ! $CORE_ONLY; then
         echo ""
         echo "Strategist will run automatically:"
         echo "  - Morning ($TIMEZONE_DESC): strategy (Mon) / day-plan (Tue-Sun)"

@@ -45,7 +45,7 @@ Just as an IDE combines editor, compiler, and debugger into one environment for 
 
 | Term | What it is |
 |------|-----------|
-| **Exocortex** | Your external memory — files with plans, context, conclusions that Claude reads in every session |
+| **Exocortex** | Your external memory — files with plans, context, and conclusions that the active AI agent reads in every session |
 | **Pack** | Formalized knowledge base for your domain — the single source-of-truth for domain knowledge |
 | **OWC** | Open → Work → Close — a ritual for every session and every day, prevents context loss |
 | **ArchGate** | Structured evaluation of architectural decisions across 7 characteristics (instead of "I think it's fine") |
@@ -65,15 +65,15 @@ IWE is not a collection of prompts. It's a **work culture**: 14 elements (protoc
 
 Every session and every day goes through three stages:
 
-- **Open** — Claude checks the plan, identifies the task, agrees on approach. You don't start from scratch — the AI knows the context.
-- **Work** — as you work, Claude captures valuable knowledge (Capture-to-Pack). Insights are never lost.
+- **Open** — the AI agent checks the plan, identifies the task, and agrees on approach. You don't start from scratch — the context is already there.
+- **Work** — as you work, the agent captures valuable knowledge (Capture-to-Pack). Insights are never lost.
 - **Close** — results are recorded, plan is updated, next session picks up where you left off.
 
 Skipping Open = unplanned work. Skipping Close = lost results.
 
 ### Exocortex — External Memory
 
-Your knowledge, principles, distinctions, plans, and context are stored in files that Claude reads every session. This isn't a "prompt" — it's an **accumulated base** that grows with you.
+Your knowledge, principles, distinctions, plans, and context are stored in files that the selected AI agent reads every session. This isn't a "prompt" — it's an **accumulated base** that grows with you.
 
 ### Knowledge Formalization (Pack)
 
@@ -100,7 +100,7 @@ IWE is for those who want to change this:
 
 | Scenario | What Happens |
 |----------|-------------|
-| **Product development** | Claude knows the architecture, tech debt, roadmap. Each session is a continuation, not a fresh start |
+| **Product development** | The AI agent knows the architecture, tech debt, and roadmap. Each session is a continuation, not a fresh start |
 | **Documentation** | Knowledge is captured in Pack as you work. No need to "write docs later" — they're written during work |
 | **Project coordination** | WeekPlan, DayPlan, work product registry — Strategist helps plan and track progress |
 | **Review and refactoring** | ArchGate evaluates decisions across 7 characteristics. Not "I think it's good" — structured evaluation |
@@ -109,7 +109,7 @@ IWE is for those who want to change this:
 
 | Scenario | What Happens |
 |----------|-------------|
-| **Taking a course** | Claude helps capture key ideas, asks comprehension questions, connects new material with what you already know |
+| **Taking a course** | The AI agent helps capture key ideas, asks comprehension questions, and connects new material with what you already know |
 | **Writing articles** | Creative pipeline: note → draft → template → publication. Every artifact is tracked |
 | **Strategy sessions** | Weekly session: review last week, plan next week, align with goals. Strategist prepares a draft — you make decisions |
 | **Building a knowledge base** | Your Pack grows. In six months you have a formalized domain knowledge base, not a collection of notes |
@@ -121,8 +121,8 @@ IWE is for those who want to change this:
 ## What It Looks Like in Practice
 
 - Morning — Strategist created a plan: Telegram notification + DayPlan file in the repository
-- Open VS Code → `claude` → Claude knows what's in the plan and suggests starting with the priority item
-- Work — Claude captures knowledge along the way (Capture-to-Pack)
+- Open your selected agent or editor → it knows what's in the plan and suggests starting with the priority item
+- Work — the agent captures knowledge along the way (Capture-to-Pack)
 - Close session — results recorded, plan updated
 - Monday — Strategist prepares a draft weekly plan, you discuss it in a strategy session
 
@@ -130,7 +130,7 @@ IWE is for those who want to change this:
 
 ## Getting Started
 
-**Quick start** (Git, Node.js, Claude Code already installed): **[QUICK-START.md](docs/QUICK-START.md)** — 15 minutes to your first session.
+**Quick start** (Git and your selected AI agent already installed): **[QUICK-START.md](docs/QUICK-START.md)** — 15 minutes to your first session.
 
 **Full installation** from a clean computer: **[SETUP-GUIDE.md](docs/SETUP-GUIDE.md)** — 30-60 minutes with all dependencies.
 
@@ -145,10 +145,10 @@ After installation:
 
 ```bash
 cd ~/IWE
-claude
+# Command depends on the selected profile: claude / cursor / code
 ```
 
-Tell Claude: **"Let's run our first strategy session"** — and it will guide you through setting goals, creating your first plan, and configuring the environment.
+Tell the agent: **"Let's run our first strategy session"** — and it will guide you through setting goals, creating your first plan, and configuring the environment.
 
 ---
 
@@ -202,7 +202,7 @@ More: [extensions/README.md](extensions/README.md)
 A: For full installation (Claude Code) — Claude Pro ($20/mo) is recommended. You can upgrade to Claude Max (~$100/mo) for unlimited usage. For minimal installation (`setup.sh --core`) — works with any AI CLI. More: [SETUP-GUIDE.md](docs/SETUP-GUIDE.md).
 
 **Q: Does it work with other AIs (not Claude)?**
-A: Partially. All knowledge is stored in open formats (Markdown, YAML, Git) — it will survive any vendor switch. But automation (OWC protocols, skills, hooks, roles) is built for Claude Code CLI. For Codex (OpenAI), Aider, or other AI CLIs, you'll need to adapt `.claude/` and role scripts. Minimal installation (`setup.sh --core`) works without vendor lock-in.
+A: Yes, partially unified. The installer supports Claude Code, Cursor, GitHub Copilot, and Antigravity profiles. The shared knowledge layer lives in open formats (Markdown, YAML, Git), while vendor-specific instructions are split across `AGENTS.md`, `.github/copilot-instructions.md`, `.cursor/rules/`, and `.claude/`. Full `.claude/skills` parity still exists only for Claude.
 
 **Q: Does it work on Linux/Windows?**
 A: Yes. The core works on any OS. Strategist automation: macOS — launchd, Linux — cron, Windows — WSL. More: [SETUP-GUIDE.md](docs/SETUP-GUIDE.md).

@@ -30,80 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Нет автор-специфичного контента
-      - name: Check for author-specific content
+      # 1-4. Локальный валидатор шаблона
+      - name: Run template validator
         run: |
-          FAIL=0
-          for pattern in "tserentserenov" "PACK-MIM" "aist_bot_newarchitecture" "DS-Knowledge-Index-Tseren"; do
-            count=$(grep -rn "$pattern" . --include="*.md" --include="*.sh" \
-                    --include="*.json" --include="*.plist" --include="*.yaml" 2>/dev/null | wc -l)
-            if [ "$count" -gt 0 ]; then
-              echo "FAIL: Found '$pattern' in $count locations:"
-              grep -rn "$pattern" . --include="*.md" --include="*.sh" \
-                  --include="*.json" --include="*.plist" 2>/dev/null | head -5
-              FAIL=1
-            fi
-          done
-          [ "$FAIL" -eq 0 ] && echo "PASS: No author-specific content"
-          exit $FAIL
-
-      # 2. Нет захардкоженных /Users/ путей
-      - name: Check for hardcoded paths
-        run: |
-          FAIL=0
-          count=$(grep -rn '/Users/' . --include="*.md" --include="*.sh" \
-                  --include="*.json" --include="*.plist" 2>/dev/null | wc -l)
-          if [ "$count" -gt 0 ]; then
-            echo "FAIL: Found /Users/ in $count locations:"
-            grep -rn '/Users/' . --include="*.md" --include="*.sh" 2>/dev/null | head -5
-            FAIL=1
-          fi
-
-          count=$(grep -rn '/opt/homebrew' . --include="*.md" --include="*.sh" \
-                  --include="*.json" --include="*.plist" 2>/dev/null \
-                  | grep -v 'README.md' \
-                  | grep -v 'validate-template.yml' \
-                  | grep -v '/usr/local/bin.*:/opt/homebrew' \
-                  | wc -l)
-          if [ "$count" -gt 0 ]; then
-            echo "FAIL: Found /opt/homebrew in $count locations:"
-            grep -rn '/opt/homebrew' . --include="*.md" --include="*.sh" 2>/dev/null \
-                | grep -v 'README.md' | grep -v 'validate-template.yml' | head -5
-            FAIL=1
-          fi
-
-          [ "$FAIL" -eq 0 ] && echo "PASS: No hardcoded paths"
-          exit $FAIL
-
-      # 3. MEMORY.md — скелет
-      - name: Check MEMORY.md is skeleton
-        run: |
-          if [ -f "memory/MEMORY.md" ]; then
-            rows=$(grep -c '^|' memory/MEMORY.md 2>/dev/null || echo 0)
-            if [ "$rows" -gt 15 ]; then
-              echo "FAIL: MEMORY.md has $rows table rows (expected ≤15)"
-              exit 1
-            fi
-            echo "PASS: MEMORY.md is skeleton ($rows rows)"
-          else
-            echo "WARN: memory/MEMORY.md not found"
-          fi
-
-      # 4. Обязательные файлы
-      - name: Check required files
-        run: |
-          FAIL=0
-          for f in CLAUDE.md ONTOLOGY.md README.md \
-                   memory/MEMORY.md memory/hard-distinctions.md \
-                   memory/roles.md \
-                   roles/strategist/scripts/strategist.sh; do
-            if [ ! -f "$f" ]; then
-              echo "MISSING: $f"
-              FAIL=1
-            fi
-          done
-          [ "$FAIL" -eq 0 ] && echo "PASS: All required files present"
-          exit $FAIL
+          chmod +x setup/validate-template.sh
+          bash setup/validate-template.sh .
 
       # 5. MCP — серверы подключаются через claude.ai/settings/connectors (не локально)
       - name: Check MCP documentation
@@ -121,9 +52,9 @@ jobs:
       - name: Check placeholders are valid
         run: |
           # Найти все {{...}} и проверить что они из допустимого списка
-          ALLOWED="HOME_DIR|WORKSPACE_DIR|GITHUB_USER|CLAUDE_PATH|CLAUDE_PROJECT_SLUG|TIMEZONE_HOUR|TIMEZONE_DESC"
-          INVALID=$(grep -rohP '\{\{[A-Z_]+\}\}' . --include="*.md" --include="*.sh" \
-                    --include="*.json" --include="*.plist" 2>/dev/null \
+          ALLOWED="HOME_DIR|WORKSPACE_DIR|GITHUB_USER|AGENT_ID|AGENT_NAME|AGENT_MODE|AGENT_COMMAND|PROJECT_SLUG|AGENT_MEMORY_DIR|CLAUDE_PATH|CLAUDE_PROJECT_SLUG|TIMEZONE_HOUR|TIMEZONE_DESC"
+          INVALID=$(grep -rohP '\{\{[A-Z_]+\}\}' . --include="*.md" --include="*.mdc" --include="*.sh" \
+                    --include="*.json" --include="*.plist" --include="*.yaml" 2>/dev/null \
                     | sort -u \
                     | grep -vP "\{\{($ALLOWED)\}\}" || true)
           if [ -n "$INVALID" ]; then

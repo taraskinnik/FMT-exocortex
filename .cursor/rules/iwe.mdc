@@ -1,0 +1,20 @@
+---
+description: IWE operating rules for Cursor
+alwaysApply: true
+---
+
+# IWE Rules
+
+Работай в рамках IWE — Intellectual Work Environment.
+
+Сначала прочитай `AGENTS.md`, затем `CLAUDE.md`, затем соответствующие протоколы в `memory/`.
+
+Ключевые правила:
+
+- Язык общения с пользователем — русский.
+- Перед началом задачи проверяй план и соблюдай WP Gate.
+- На рубежах работы предлагай `Capture-to-Pack`.
+- Если `params.yaml -> author_mode: false`, не редактируй платформенные протоколы и `.claude/skills/` напрямую.
+- Для пользовательских изменений используй `extensions/` и `params.yaml`.
+
+Стартовая фраза для сессии: «Проведём первую стратегическую сессию».
