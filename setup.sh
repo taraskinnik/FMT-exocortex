@@ -301,6 +301,15 @@ check_command() {
 }
 
 # Git — обязателен всегда
+# Detect gh — may be gh.exe on WSL/Windows interop
+GH_CMD=""
+if command -v gh >/dev/null 2>&1; then
+    GH_CMD="gh"
+elif command -v gh.exe >/dev/null 2>&1; then
+    GH_CMD="gh.exe"
+fi
+
+# Git — обязателен всегда
 check_command "git" "Git" "xcode-select --install"
 
 if $CORE_ONLY; then
@@ -308,17 +317,19 @@ if $CORE_ONLY; then
     echo "  Режим --core: проверяются только обязательные зависимости (git)."
     echo "  GitHub CLI, Node.js, Claude Code — не требуются."
 else
-    check_command "gh" "GitHub CLI" "brew install gh"
-
-    # Check gh auth
-    if command -v gh >/dev/null 2>&1; then
-        if gh auth status >/dev/null 2>&1; then
+    if [ -n "$GH_CMD" ]; then
+        echo "  ✓ GitHub CLI: $(command -v $GH_CMD)"
+        if $GH_CMD auth status >/dev/null 2>&1; then
             echo "  ✓ GitHub CLI: authenticated"
         else
             echo "  ✗ GitHub CLI: not authenticated"
             echo "    Run: gh auth login"
             PREREQ_FAIL=1
         fi
+    else
+        echo "  ✗ GitHub CLI: NOT FOUND"
+        echo "    Install: https://cli.github.com/"
+        PREREQ_FAIL=1
     fi
 fi
 
@@ -773,7 +784,7 @@ else
 
         if ! $CORE_ONLY; then
             # Create GitHub repo (full mode only)
-            gh repo create "$GITHUB_USER/DS-strategy" --private --source=. --push 2>/dev/null || \
+            $GH_CMD repo create "$GITHUB_USER/DS-strategy" --private --source=. --push 2>/dev/null || \
                 echo "  GitHub repo DS-strategy already exists or creation skipped."
         else
             echo "  Локальный репозиторий создан. Для публикации на GitHub:"
@@ -790,7 +801,7 @@ else
         git commit -m "Initial exocortex: DS-strategy governance hub (minimal)"
 
         if ! $CORE_ONLY; then
-            gh repo create "$GITHUB_USER/DS-strategy" --private --source=. --push 2>/dev/null || \
+                $GH_CMD repo create "$GITHUB_USER/DS-strategy" --private --source=. --push 2>/dev/null || \
                 echo "  GitHub repo DS-strategy already exists or creation skipped."
         fi
     fi
