@@ -643,23 +643,39 @@ else
     echo "[4b] Claude hooks/skills... skipped for $AGENT_NAME"
 fi
 
-# === 4c. Copy .mcp.json to workspace ===
-echo "[4c] Configuring .mcp.json..."
+# === 4c. Copy .mcp.json to workspace (agent-specific path) ===
+echo "[4c] Configuring MCP servers..."
 
 MCP_TEMPLATE="$TEMPLATE_DIR/.mcp.json"
-MCP_DEST="$WORKSPACE_DIR/.mcp.json"
 MCP_USER_EXT="$WORKSPACE_DIR/extensions/mcp-user.json"
+
+# Resolve agent-specific MCP destination path
+case "$AGENT_ID" in
+    copilot)
+        MCP_DEST="$WORKSPACE_DIR/.copilot/mcp-config.json"
+        MCP_DEST_DIR="$WORKSPACE_DIR/.copilot"
+        ;;
+    cursor)
+        MCP_DEST="$WORKSPACE_DIR/.cursor/mcp.json"
+        MCP_DEST_DIR="$WORKSPACE_DIR/.cursor"
+        ;;
+    *)
+        MCP_DEST="$WORKSPACE_DIR/.mcp.json"
+        MCP_DEST_DIR="$WORKSPACE_DIR"
+        ;;
+esac
 
 if $DRY_RUN; then
     echo "  [DRY RUN] Would copy $MCP_TEMPLATE → $MCP_DEST"
     echo "    iwe-knowledge → https://mcp.aisystant.com/mcp (OAuth)"
     if [ -f "$MCP_USER_EXT" ] && command -v jq >/dev/null 2>&1; then
-        echo "  [DRY RUN] Would merge extensions/mcp-user.json into .mcp.json"
+        echo "  [DRY RUN] Would merge extensions/mcp-user.json into $MCP_DEST"
     fi
 elif [ ! -f "$MCP_TEMPLATE" ]; then
     echo "  WARN: $MCP_TEMPLATE not found, skipping."
 else
-    # Copy template .mcp.json to workspace (no placeholders — Gateway URL is static)
+    # Copy template .mcp.json to agent-specific destination
+    mkdir -p "$MCP_DEST_DIR"
     cp "$MCP_TEMPLATE" "$MCP_DEST"
     echo "  ✓ $MCP_DEST → iwe-knowledge (Gateway, OAuth)"
 
